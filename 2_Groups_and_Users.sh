@@ -50,13 +50,6 @@ do
         continue
     fi
 
-    # Vérifier le matricule
-    if [[ ! "$matricule" =~ ^TK[0-9]+$ ]]
-    then
-        echo "Matricule invalide : $matricule"
-        continue
-    fi
-
     # Créer le login : première lettre du prénom + nom
     login="${prenom:0:1}$nom"
 
