@@ -1,0 +1,21 @@
+#!/bin/bash
+
+# Lire le fichier CSV
+while IFS="," read -r matricule prenom nom naissance groupe reste
+do
+    # Vérifier si le groupe existe
+    if ! grep -q "^$groupe:" /etc/group
+    then
+        groupadd "$groupe"
+    fi
+
+    # Vérifier si l'utilisateur existe
+    if ! id "$matricule" > /dev/null 2>&1
+    then
+        useradd -m -g "$groupe" "$matricule"
+        echo "Utilisateur $matricule créé"
+    else
+        echo "Utilisateur $matricule déjà existant"
+    fi
+
+done < "$1"
