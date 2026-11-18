@@ -84,6 +84,8 @@ do
             continue
         fi
     fi
+    
+    #CREATION DE GROUPE DE SOUS-SERVICE
 
     # Créer l'utilisateur dans son groupe principal
     if ! id "$login" > /dev/null 2>&1
