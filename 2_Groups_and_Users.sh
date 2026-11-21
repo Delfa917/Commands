@@ -1,28 +1,25 @@
 #!/bin/bash
-
-# ==============================================================================
 # SCRIPT DE CRÉATION AUTOMATIQUE D'UTILISATEURS ET GROUPES DEPUIS UN CSV
-# ==============================================================================
 
-# 1. Vérifier que le script est lancé avec les droits administrateur (sudo)
+# 1. Vérifier que le script est lancé avec sudo
 if [ "$EUID" -ne 0 ]
 then
     echo "Erreur : utilisez sudo pour lancer ce script."
     exit 1
 fi
 
-# 2. Vérifier que le fichier CSV passé en paramètre existe
+# 2. Vérifier que le fichier CSV existe
 if [ ! -f "$1" ]
 then
     echo "Erreur : Fichier CSV introuvable."
     exit 1
 fi
 
-# 3. Lire le fichier CSV ligne par ligne
+# 3. Lire le fichier CSV
 while IFS="," read -r matricule prenom nom naissance pole service poste projets reste
 do
 
-    # Ignorer la première ligne (les en-têtes de colonnes)
+    # Ignorer les en-têtes de colonnes
     if [ "$matricule" = "Matricule" ]
     then
         continue
@@ -32,12 +29,12 @@ do
     # Première lettre du prénom + nom de famille
     login="${prenom:0:1}$nom"
 
-    # Suppression des accents, passage en minuscules et retrait des caractères spéciaux
+    # Suppression des accents, des caractères spéciaux et passage en minuscules 
     login=$(echo "$login" | iconv -f UTF-8 -t ASCII//TRANSLIT)
     login=$(echo "$login" | tr 'A-Z' 'a-z')
     login=$(echo "$login" | tr -cd 'a-z')
 
-    # Limitation à 8 caractères maximum
+    # Limiter le login à 8 charactères
     login="${login:0:8}"
 
     if [ -z "$login" ]
@@ -46,7 +43,7 @@ do
         continue
     fi
 
-    # --- ÉTAPE B : GROUPE PRINCIPAL (PÔLE) ---
+    # --- ÉTAPE B : GROUPE PRINCIPAL ---
     pole=$(echo "$pole" | iconv -f UTF-8 -t ASCII//TRANSLIT)
     pole=$(echo "$pole" | tr 'A-Z' 'a-z')
 
@@ -60,16 +57,16 @@ do
     then
         if ! groupadd "$pole"
         then
-            echo "Erreur lors de la création du groupe principal : $pole"
+            echo "Erreur lors de la création du groupe : $pole"
             continue
         fi
     fi
 
-    # --- ÉTAPE C : GROUPE SECONDAIRE (SOUS-SERVICE) ---
+    # --- ÉTAPE C : GROUPE SECONDAIRE ---
     service=$(echo "$service" | iconv -f UTF-8 -t ASCII//TRANSLIT)
     service=$(echo "$service" | tr 'A-Z' 'a-z')
 
-    # Nommage combiné (ex: informatique_reseau) pour éviter les doublons
+    # Nommage combiné (ex: informatique_reseau)
     groupe_service="${pole}_${service}"
 
     if [[ ! "$groupe_service" =~ ^[a-z_][a-z0-9_-]*$ ]]
@@ -82,7 +79,7 @@ do
     then
         if ! groupadd "$groupe_service"
         then
-            echo "Erreur lors de la création du sous-groupe : $groupe_service"
+            echo "Erreur lors de la création du groupe secondaire : $groupe_service"
             continue
         fi
     fi
@@ -92,13 +89,13 @@ do
     then
         if useradd -m -g "$pole" -s /bin/bash -c "$matricule" "$login"
         then
-            echo "[OK] Utilisateur $login créé dans le pôle $pole"
+            echo "Utilisateur $login créé dans le pôle $pole"
         else
-            echo "[ERREUR] Impossible de créer l'utilisateur : $login"
+            echo "Erreur : Impossible de créer l'utilisateur : $login"
             continue
         fi
 
-        # Définition du mot de passe initial (date de naissance sans les '/')
+        # Définition du mot de passe initial (date de naissance)
         mdp=$(echo "$naissance" | tr -d '/')
 
         if echo "$login:$mdp" | chpasswd
@@ -106,11 +103,11 @@ do
             # Oblige l'utilisateur à changer son mot de passe à la 1ère connexion
             chage -d 0 "$login"
         else
-            echo "[ERREUR] Problème de mot de passe pour $login (compte verrouillé)"
+            echo "Erreur : Problème de mot de passe pour $login (compte verrouillé)"
             passwd -l "$login"
         fi
     else
-        echo "[INFO] L'utilisateur $login existe déjà"
+        echo "L'utilisateur $login existe déjà"
     fi
 
     # Rattachement au groupe du sous-service
