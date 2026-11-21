@@ -1,78 +1,58 @@
 #!/bin/bash
 
-# Lire le fichier CSV
-while IFS="," read -r matricule prenom nom naissance groupe reste
-do
-    # Vérifier si le groupe existe
-    if ! grep -q "^$groupe:" /etc/group
-    then
-        groupadd "$groupe"
-    fi
+# ==============================================================================
+# SCRIPT DE CRÉATION AUTOMATIQUE D'UTILISATEURS ET GROUPES DEPUIS UN CSV
+# ==============================================================================
 
-    # Vérifier si l'utilisateur existe
-    if ! id "$matricule" > /dev/null 2>&1
-    then
-        useradd -m -g "$groupe" "$matricule"
-        echo "Utilisateur $matricule créé"
-    else
-        echo "Utilisateur $matricule déjà existant"
-    fi
-
-done < "$1"
-
-
-//TEST PROGRAMME PLUS SPECIFIQUE (ENTIEREMENT IA)
-
-
-#!/bin/bash
-
-# Vérifier que le script est lancé avec sudo
+# 1. Vérifier que le script est lancé avec les droits administrateur (sudo)
 if [ "$EUID" -ne 0 ]
 then
-    echo "Erreur : utilisez sudo"
+    echo "Erreur : utilisez sudo pour lancer ce script."
     exit 1
 fi
 
-# Vérifier le fichier CSV
+# 2. Vérifier que le fichier CSV passé en paramètre existe
 if [ ! -f "$1" ]
 then
-    echo "Fichier CSV introuvable"
+    echo "Erreur : Fichier CSV introuvable."
     exit 1
 fi
 
-# Lire le fichier CSV
+# 3. Lire le fichier CSV ligne par ligne
 while IFS="," read -r matricule prenom nom naissance pole service poste projets reste
 do
 
-    # Ignorer la première ligne
+    # Ignorer la première ligne (les en-têtes de colonnes)
     if [ "$matricule" = "Matricule" ]
     then
         continue
     fi
 
-    # Créer le login : première lettre du prénom + nom
+    # --- ÉTAPE A : GÉNÉRATION DU LOGIN ---
+    # Première lettre du prénom + nom de famille
     login="${prenom:0:1}$nom"
 
-    # Supprimer les accents et les caractères spéciaux
+    # Suppression des accents, passage en minuscules et retrait des caractères spéciaux
     login=$(echo "$login" | iconv -f UTF-8 -t ASCII//TRANSLIT)
     login=$(echo "$login" | tr 'A-Z' 'a-z')
     login=$(echo "$login" | tr -cd 'a-z')
 
-    # Limiter à 8 caractères
+    # Limitation à 8 caractères maximum
     login="${login:0:8}"
 
     if [ -z "$login" ]
     then
-        echo "Login invalide pour $matricule"
+        echo "Login invalide pour le matricule : $matricule"
         continue
     fi
 
-    # Créer le groupe principal à partir du pôle
+    # --- ÉTAPE B : GROUPE PRINCIPAL (PÔLE) ---
+    pole=$(echo "$pole" | iconv -f UTF-8 -t ASCII//TRANSLIT)
     pole=$(echo "$pole" | tr 'A-Z' 'a-z')
 
     if [[ ! "$pole" =~ ^[a-z_][a-z0-9_-]*$ ]]
     then
-        echo "Pôle invalide : $pole"
+        echo "Nom de pôle invalide : $pole"
         continue
     fi
 
@@ -80,40 +60,66 @@ do
     then
         if ! groupadd "$pole"
         then
-            echo "Erreur de création du groupe $pole"
+            echo "Erreur lors de la création du groupe principal : $pole"
             continue
         fi
     fi
-    
-    #CREATION DE GROUPE DE SOUS-SERVICE
 
-    # Créer l'utilisateur dans son groupe principal
+    # --- ÉTAPE C : GROUPE SECONDAIRE (SOUS-SERVICE) ---
+    service=$(echo "$service" | iconv -f UTF-8 -t ASCII//TRANSLIT)
+    service=$(echo "$service" | tr 'A-Z' 'a-z')
+
+    # Nommage combiné (ex: informatique_reseau) pour éviter les doublons
+    groupe_service="${pole}_${service}"
+
+    if [[ ! "$groupe_service" =~ ^[a-z_][a-z0-9_-]*$ ]]
+    then
+        echo "Nom de sous-service invalide : $service"
+        continue
+    fi
+
+    if ! grep -q "^$groupe_service:" /etc/group
+    then
+        if ! groupadd "$groupe_service"
+        then
+            echo "Erreur lors de la création du sous-groupe : $groupe_service"
+            continue
+        fi
+    fi
+
+    # --- ÉTAPE D : CRÉATION DE L'UTILISATEUR ---
     if ! id "$login" > /dev/null 2>&1
     then
         if useradd -m -g "$pole" -s /bin/bash -c "$matricule" "$login"
         then
-            echo "Utilisateur $login créé dans $pole"
+            echo "[OK] Utilisateur $login créé dans le pôle $pole"
         else
-            echo "Erreur de création : $login"
+            echo "[ERREUR] Impossible de créer l'utilisateur : $login"
             continue
         fi
 
-        # Définir un mot de passe initial
+        # Définition du mot de passe initial (date de naissance sans les '/')
         mdp=$(echo "$naissance" | tr -d '/')
 
         if echo "$login:$mdp" | chpasswd
         then
-            # Demander de changer le mot de passe
+            # Oblige l'utilisateur à changer son mot de passe à la 1ère connexion
             chage -d 0 "$login"
         else
-            echo "Erreur de mot de passe pour $login"
+            echo "[ERREUR] Problème de mot de passe pour $login (compte verrouillé)"
             passwd -l "$login"
         fi
     else
-        echo "Utilisateur $login déjà existant"
+        echo "[INFO] L'utilisateur $login existe déjà"
     fi
 
-    # Créer les groupes secondaires des projets
+    # Rattachement au groupe du sous-service
+    if usermod -aG "$groupe_service" "$login"
+    then
+        echo "  -> $login ajouté au sous-service : $groupe_service"
+    fi
+
+    # --- ÉTAPE E : GROUPES SECONDAIRES (PROJETS) ---
     for projet in $(echo "$projets" | tr ';' ' ')
     do
         projet=$(echo "$projet" | iconv -f UTF-8 -t ASCII//TRANSLIT)
@@ -121,28 +127,25 @@ do
 
         if [[ ! "$projet" =~ ^[a-z_][a-z0-9_-]*$ ]]
         then
-            echo "Projet invalide : $projet"
+            echo "Nom de projet invalide : $projet"
             continue
         fi
 
-        # Créer le groupe du projet
         if ! grep -q "^$projet:" /etc/group
         then
             if ! groupadd "$projet"
             then
-                echo "Erreur de création : $projet"
+                echo "Erreur lors de la création du projet : $projet"
                 continue
             fi
         fi
 
-        # Ajouter l'utilisateur au groupe du projet
         if usermod -aG "$projet" "$login"
         then
-            echo "$login ajouté à $projet"
+            echo "  -> $login ajouté au projet : $projet"
         fi
-
     done
 
 done < "$1"
 
-echo "Création des comptes terminée"
+echo "Création des comptes terminée."
