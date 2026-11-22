@@ -1,3 +1,4 @@
+
 #!/bin/bash
 # SCRIPT DE CRÉATION AUTOMATIQUE D'UTILISATEURS ET GROUPES DEPUIS UN CSV
 
@@ -8,15 +9,24 @@ then
     exit 1
 fi
 
-# 2. Vérifier que le fichier CSV existe
-if [ ! -f "$1" ]
+# 2. Vérifier qu'un fichier CSV a été fourni
+if [ $# -ne 1 ]
 then
-    echo "Erreur : Fichier CSV introuvable."
+    echo "Erreur : indiquez le chemin du fichier CSV."
+    echo "Exemple : sudo ./creation.sh utilisateurs.csv"
     exit 1
 fi
 
-# 3. Lire le fichier CSV
-while IFS="," read -r matricule prenom nom naissance pole service poste projets reste
+# 3. Vérifier que le fichier CSV existe et est lisible
+if [ ! -f "$1" ] || [ ! -r "$1" ]
+then
+    echo "Erreur : fichier CSV introuvable ou illisible : $1"
+    echo "Dossier actuel : $(pwd)"
+    exit 1
+fi
+
+# 4. Lire le fichier CSV
+while IFS="," read -r matricule prenom nom naissance pole service poste projets reste || [ -n "$matricule" ]
 do
 
     # Ignorer les en-têtes de colonnes
@@ -29,12 +39,12 @@ do
     # Première lettre du prénom + nom de famille
     login="${prenom:0:1}$nom"
 
-    # Suppression des accents, des caractères spéciaux et passage en minuscules 
+    # Suppression des accents, des caractères spéciaux et passage en minuscules
     login=$(echo "$login" | iconv -f UTF-8 -t ASCII//TRANSLIT)
     login=$(echo "$login" | tr 'A-Z' 'a-z')
     login=$(echo "$login" | tr -cd 'a-z')
 
-    # Limiter le login à 8 charactères
+    # Limiter le login à 8 caractères
     login="${login:0:8}"
 
     if [ -z "$login" ]
@@ -53,7 +63,7 @@ do
         continue
     fi
 
-    if ! grep -q "^$pole:" /etc/group
+    if ! getent group "$pole" > /dev/null
     then
         if ! groupadd "$pole"
         then
@@ -75,7 +85,7 @@ do
         continue
     fi
 
-    if ! grep -q "^$groupe_service:" /etc/group
+    if ! getent group "$groupe_service" > /dev/null
     then
         if ! groupadd "$groupe_service"
         then
@@ -101,7 +111,10 @@ do
         if echo "$login:$mdp" | chpasswd
         then
             # Oblige l'utilisateur à changer son mot de passe à la 1ère connexion
-            chage -d 0 "$login"
+            if ! chage -d 0 "$login"
+            then
+                echo "Erreur lors du changement obligatoire du mot de passe"
+            fi
         else
             echo "Erreur : Problème de mot de passe pour $login (compte verrouillé)"
             passwd -l "$login"
@@ -114,13 +127,22 @@ do
     if usermod -aG "$groupe_service" "$login"
     then
         echo "  -> $login ajouté au sous-service : $groupe_service"
+    else
+        echo "Erreur lors de l'ajout au sous-service : $groupe_service"
     fi
 
     # --- ÉTAPE E : GROUPES SECONDAIRES (PROJETS) ---
-    for projet in $(echo "$projets" | tr ';' ' ')
+    IFS=';' read -ra liste_projets <<< "$projets"
+
+    for projet in "${liste_projets[@]}"
     do
         projet=$(echo "$projet" | iconv -f UTF-8 -t ASCII//TRANSLIT)
         projet=$(echo "$projet" | tr 'A-Z' 'a-z')
+
+        if [ -z "$projet" ]
+        then
+            continue
+        fi
 
         if [[ ! "$projet" =~ ^[a-z_][a-z0-9_-]*$ ]]
         then
@@ -128,7 +150,7 @@ do
             continue
         fi
 
-        if ! grep -q "^$projet:" /etc/group
+        if ! getent group "$projet" > /dev/null
         then
             if ! groupadd "$projet"
             then
@@ -140,6 +162,8 @@ do
         if usermod -aG "$projet" "$login"
         then
             echo "  -> $login ajouté au projet : $projet"
+        else
+            echo "Erreur lors de l'ajout au projet : $projet"
         fi
     done
 
