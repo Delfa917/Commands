@@ -9,23 +9,17 @@ then
     exit 1
 fi
 
-# 2. Vérifier qu'un fichier CSV a été fourni
-if [ $# -ne 1 ]
+# 2. Définir le chemin du fichier CSV
+fichier="/home/pi/Downloads/tekitizy_users.csv"
+
+# Vérifier que le fichier existe et est lisible
+if [ ! -f "$fichier" ] || [ ! -r "$fichier" ]
 then
-    echo "Erreur : indiquez le chemin du fichier CSV."
-    echo "Exemple : sudo ./creation.sh utilisateurs.csv"
+    echo "Erreur : fichier CSV introuvable ou illisible : $fichier"
     exit 1
 fi
 
-# 3. Vérifier que le fichier CSV existe et est lisible
-if [ ! -f "$1" ] || [ ! -r "$1" ]
-then
-    echo "Erreur : fichier CSV introuvable ou illisible : $1"
-    echo "Dossier actuel : $(pwd)"
-    exit 1
-fi
-
-# 4. Lire le fichier CSV
+# 3. Lire le fichier CSV
 while IFS="," read -r matricule prenom nom naissance pole service poste projets reste || [ -n "$matricule" ]
 do
 
@@ -167,6 +161,6 @@ do
         fi
     done
 
-done < "$1"
+done < "$fichier"
 
 echo "Création des comptes terminée."
