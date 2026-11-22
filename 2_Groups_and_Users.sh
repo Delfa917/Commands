@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Lancer avec : sudo ./createusers.sh tekitizy_users.csv
+# Lancer avec sudo ./createusers.sh tekitizy_users.csv
 if [ "$EUID" -ne 0 ] || [ ! -f "$1" ]; then
     echo "Utilisation : sudo $0 fichier.csv"
     exit 1
@@ -13,12 +13,12 @@ chown root:personnel /SERVICES/COMMUN
 chmod 770 /SERVICES/COMMUN
 chmod g+s /SERVICES/COMMUN
 
-# Lire chaque salarié, sans traiter la ligne des titres
+# Lire chaque salarié en passant la ligne de titre
 {
 read -r entete
 while IFS=',' read -r matricule prenom nom naissance pole service poste projets reste
 do
-    # Nom du compte : initiale du prénom + nom
+    # Nom du compte
     login="${prenom:0:1}$nom"
     login=$(echo "$login" | iconv -f UTF-8 -t ASCII//TRANSLIT | tr 'A-Z' 'a-z' | tr -cd 'a-z')
     login="${login:0:8}"
@@ -27,7 +27,7 @@ do
         continue
     fi
 
-    # Si le login est pris : 6 lettres + 01, 02...
+    # Si le login est pris rajouter un chiffre
     base="${login:0:6}"
     numero=1
     while id "$login" > /dev/null 2>&1
@@ -41,7 +41,7 @@ do
     done
     if [ "$numero" -gt 99 ]; then continue; fi
 
-    # Groupe Linux en minuscules, dossier en majuscules sans accent
+    # Groupe en minuscules, dossier en majuscules sans accent
     pole_dossier=$(echo "$pole" | iconv -f UTF-8 -t ASCII//TRANSLIT | tr 'a-z' 'A-Z' | tr -cd 'A-Z_')
     pole_groupe=$(echo "$pole_dossier" | tr 'A-Z' 'a-z')
     if [ -z "$pole_groupe" ]; then continue; fi
@@ -52,14 +52,14 @@ do
     chmod 770 "/SERVICES/$pole_dossier"
     chmod g+s "/SERVICES/$pole_dossier"
 
-    # Créer le compte (le pôle est le groupe principal)
+    # Créer le compte
     if ! useradd -m -g "$pole_groupe" -G personnel -s /bin/bash -c "$matricule" "$login"; then
         echo "Erreur pour $matricule"
         continue
     fi
     chmod 700 "/home/$login"
 
-    # Mot de passe initial demandé dans le sujet : JJMMYYYY
+    # Mot de passe initial au format JJMMYYYY
     mdp=$(echo "$naissance" | tr -d '/')
     if [[ "$mdp" =~ ^[0-9]{8}$ ]]; then
         if echo "$login:$mdp" | chpasswd; then
@@ -94,7 +94,7 @@ do
         fi
     fi
 
-    # Zéro, un ou plusieurs projets séparés par des ;
+    # Projets séparés par des ;
     for projet in $(echo "$projets" | tr ';' ' ')
     do
         projet_dossier=$(echo "$projet" | iconv -f UTF-8 -t ASCII//TRANSLIT | tr 'a-z' 'A-Z' | tr -cd 'A-Z_')
