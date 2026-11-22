@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Lancer avec sudo ./createusers.sh tekitizy_users.csv
+# Lancer avec : sudo ./createusers.sh tekitizy_users.csv
 if [ "$EUID" -ne 0 ] || [ ! -f "$1" ]; then
     echo "Utilisation : sudo $0 fichier.csv"
     exit 1
@@ -10,14 +10,15 @@ fi
 getent group personnel > /dev/null || groupadd personnel
 mkdir -p /SERVICES/COMMUN /PROJETS
 chown root:personnel /SERVICES/COMMUN
-chmod 2770 /SERVICES/COMMUN
+chmod 770 /SERVICES/COMMUN
+chmod g+s /SERVICES/COMMUN
 
-# Lire chaque salarié en ignorant la ligne de titre
+# Lire chaque salarié, sans traiter la ligne des titres
 {
 read -r entete
 while IFS=',' read -r matricule prenom nom naissance pole service poste projets reste
 do
-    # Nom du compte 
+    # Nom du compte : initiale du prénom + nom
     login="${prenom:0:1}$nom"
     login=$(echo "$login" | iconv -f UTF-8 -t ASCII//TRANSLIT | tr 'A-Z' 'a-z' | tr -cd 'a-z')
     login="${login:0:8}"
@@ -26,7 +27,7 @@ do
         continue
     fi
 
-    # Rajouter chiffe si login existant
+    # Si le login est pris : 6 lettres + 01, 02...
     base="${login:0:6}"
     numero=1
     while id "$login" > /dev/null 2>&1
@@ -40,7 +41,7 @@ do
     done
     if [ "$numero" -gt 99 ]; then continue; fi
 
-    # Nommage des dossiers et groupe
+    # Groupe Linux en minuscules, dossier en majuscules sans accent
     pole_dossier=$(echo "$pole" | iconv -f UTF-8 -t ASCII//TRANSLIT | tr 'a-z' 'A-Z' | tr -cd 'A-Z_')
     pole_groupe=$(echo "$pole_dossier" | tr 'A-Z' 'a-z')
     if [ -z "$pole_groupe" ]; then continue; fi
@@ -48,16 +49,17 @@ do
     getent group "$pole_groupe" > /dev/null || groupadd "$pole_groupe"
     mkdir -p "/SERVICES/$pole_dossier"
     chown "root:$pole_groupe" "/SERVICES/$pole_dossier"
-    chmod 2770 "/SERVICES/$pole_dossier"
+    chmod 770 "/SERVICES/$pole_dossier"
+    chmod g+s "/SERVICES/$pole_dossier"
 
-    # Créer le compte
+    # Créer le compte (le pôle est le groupe principal)
     if ! useradd -m -g "$pole_groupe" -G personnel -s /bin/bash -c "$matricule" "$login"; then
         echo "Erreur pour $matricule"
         continue
     fi
     chmod 700 "/home/$login"
 
-    # Mot de passe initial en format JJMMYYYY
+    # Mot de passe initial demandé dans le sujet : JJMMYYYY
     mdp=$(echo "$naissance" | tr -d '/')
     if [[ "$mdp" =~ ^[0-9]{8}$ ]]; then
         if echo "$login:$mdp" | chpasswd; then
@@ -86,12 +88,13 @@ do
             usermod -aG "$service_groupe" "$login"
             mkdir -p "/SERVICES/$pole_dossier/$service_dossier"
             chown "root:$service_groupe" "/SERVICES/$pole_dossier/$service_dossier"
-            chmod 2770 "/SERVICES/$pole_dossier/$service_dossier"
+            chmod 770 "/SERVICES/$pole_dossier/$service_dossier"
+            chmod g+s "/SERVICES/$pole_dossier/$service_dossier"
             ln -s "/SERVICES/$pole_dossier/$service_dossier" "/home/$login/Partage/$service_dossier"
         fi
     fi
 
-    # Projets séparés par des ;
+    # Zéro, un ou plusieurs projets séparés par des ;
     for projet in $(echo "$projets" | tr ';' ' ')
     do
         projet_dossier=$(echo "$projet" | iconv -f UTF-8 -t ASCII//TRANSLIT | tr 'a-z' 'A-Z' | tr -cd 'A-Z_')
@@ -101,7 +104,8 @@ do
         usermod -aG "$projet_groupe" "$login"
         mkdir -p "/PROJETS/$projet_dossier"
         chown "root:$projet_groupe" "/PROJETS/$projet_dossier"
-        chmod 2770 "/PROJETS/$projet_dossier"
+        chmod 770 "/PROJETS/$projet_dossier"
+        chmod g+s "/PROJETS/$projet_dossier"
         ln -s "/PROJETS/$projet_dossier" "/home/$login/Projets/$projet_dossier"
     done
     echo "Compte créé : $login ($matricule)"
@@ -109,3 +113,4 @@ done
 } < "$1"
 
 echo "Installation terminée"
+
