@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Lancer avec sudo ./createusers.sh tekitizy_users.csv
+# Lancer avec sudo ./2_Groups_and_Users.sh tekitizy_users.csv
 if [ "$EUID" -ne 0 ] || [ ! -f "$1" ]; then
     echo "Utilisation : sudo $0 fichier.csv"
     exit 1
