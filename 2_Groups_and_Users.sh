@@ -6,7 +6,7 @@ if [ "$EUID" -ne 0 ] || [ ! -f "$1" ]; then
     exit 1
 fi
 
-# Le groupe commun et les dossiers de base
+# Création du groupe commun et les dossiers de base
 getent group personnel > /dev/null || groupadd personnel
 mkdir -p /SERVICES/COMMUN /PROJETS
 chown root:personnel /SERVICES/COMMUN
